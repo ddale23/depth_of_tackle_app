@@ -4,6 +4,49 @@ library(shinythemes)
 library(tidyverse)
 library(nflfastR)
 library(nflverse)
+library(ggrepel)
+library(ggthemes)
+library(gt)
+
+#construct a theme similat to the gt theme 538 from Thomas Mock, with slight mods
+#gt theme 528
+gt_theme_538 <- function(data,...) {
+  data %>%
+    opt_all_caps()  %>%
+    opt_table_font(
+      font = list(
+        #change font to Roboto
+        google_font("Roboto"),
+        default_fonts()
+      )
+    ) %>%
+    tab_style(
+      style = cell_borders(
+        sides = "bottom", color = "transparent", weight = px(2)
+      ),
+      locations = cells_body(
+        columns = everything(),
+        rows = nrow(data$`_data`)
+      )
+    )  %>% 
+    tab_options(
+      column_labels.background.color = "white",
+      table.border.top.width = px(3),
+      table.border.top.color = "transparent",
+      table.border.bottom.color = "transparent",
+      table.border.bottom.width = px(3),
+      column_labels.border.top.width = px(3),
+      column_labels.border.top.color = "transparent",
+      column_labels.border.bottom.width = px(3),
+      column_labels.border.bottom.color = "black",
+      data_row.padding = px(3),
+      source_notes.font.size = 12,
+      table.font.size = 16,
+      #center align
+      heading.align = "center",
+      ...
+    ) 
+}
 
 #load in data
 seasons = 2023
@@ -18,6 +61,7 @@ pbp_data =
            solo_tackle, tackled_for_loss, assist_tackle,
            week, season
            )
+max_week = max(pbp_data$week)
 
 
 #solo tackle dataframe
@@ -107,8 +151,6 @@ binded_tackle_frame =
         tfl_frame_1, tfl_frame_2, use.names = FALSE) %>% 
     rename(tackler_id = solo_tackle_1_player_id)
 
-
-
 ###
 #player info
 player_info = 
@@ -121,23 +163,28 @@ player_info =
               depth_chart_position == "SS" | depth_chart_position == "FS"  |depth_chart_position == "DB" ~ "S",
               depth_chart_position == "CB" ~ "CB",
               TRUE ~ as.character(depth_chart_position)
-    
   ))
+
+#get team colors
+player_info = left_join(player_info, teams_colors_logos, by = c("team" = "team_abbr")) %>% 
+  select(season, team, position, full_name, first_name, last_name, gsis_id, team_color, team_color2)
+
 
 #join binded_tackle_frame with player_info 
 complete_base_frame = left_join(binded_tackle_frame, player_info, by = c("tackler_id" = "gsis_id", "season" = "season"))
 
+#filter to defensive positions
 complete_base_frame = complete_base_frame %>% 
   filter(position %in% c("EDGE", "IDL", "ILB", "S", "CB"))
 
-#min tackles
-#max tackles
-
+#make unique list of names
 tacklers = unique(complete_base_frame$full_name)
 
+#set this
+options(ggrepel.max.overlaps = 20)
 
+###
 #shiny app construction
-
 
 ui <- fluidPage(
   theme = shinytheme("flatly"),
@@ -146,16 +193,21 @@ ui <- fluidPage(
   
   mainPanel(
     navbarPage("By: Drezdan Dale",
-               tabPanel("By Season",
+               tabPanel("2023 by Position",
                  fluidRow(
                    column(4, align = "center",
-                     selectInput("position_select", "Select Position", choices = c("EDGE", "IDL", "ILB", "S", "CB"), selected = "EDGE"),
-                     sliderInput("min_tackles", "Minimum Tackles", value = 21, min = min_tackles, max = max_tackles, step = 1),
-                     sliderInput("yard_range", "Tackle Depth Range", value = c(-10, 10), min = -20, max = 75, step = 1)
-               )
+                     selectInput("position_select", "Select Position", choices = c("EDGE", "IDL", "ILB", "S", "CB"), selected = "EDGE")),
+                   column(7, align = "left",
+                     sliderInput("min_tackles", "Minimum Tackles", value = 18, min = max_week*2 , max = 40, step = 1)),
+                   column(4, align = "center",
+                     sliderInput("yard_range", "Tackle Depth Range", value = c(-10, 10), min = -20, max = 75, step = 1))
                ),
                mainPanel(
-                 plotOutput(outputId = "tackler_graph")),
+                 plotOutput(outputId = "tackler_graph"),
+                 br(),
+                 tableOutput(outputId = "tackler_table"),
+                 br()
+                 ),
                ),
                tabPanel("By Player",
                         fluidRow(
@@ -179,7 +231,6 @@ ui <- fluidPage(
                                  br(),
                                  tags$h4("Feel free to connect with me on LinkedIn (search Drezdan Dale), Twitter (@drezdan_dale), or email (drez.data@gmail.com).
                                         I am always open to feedback or questions!")
-                                        
                           )
                         )
                )
@@ -198,19 +249,112 @@ server <- function(input, output) {
   
   aggregated_data = 
     aggregated_data %>%
-    group_by(tackler_id, full_name) %>%
+    group_by(tackler_id, full_name, team_color, team_color2) %>%
     summarize(adort = mean(yards_gained),
               num_tackles = n()) %>%
-    filter(num_tackles >= input$min_tackles) %>%
+    filter(num_tackles >= max_week*2) %>%
     ungroup() 
   
-  aggregated_data %>%
-    ggplot() + geom_point(aes(x = num_tackles, y = adort))
+  filtered_aggregated_data = 
+    aggregated_data %>%
+    filter(num_tackles >= input$min_tackles)
   
+  
+  filtered_aggregated_data %>%
+    ggplot(aes(x = num_tackles, y = adort)) + 
+    geom_point(aes(fill = team_color, color = team_color2), size = 3, cex = 0.6) +
+    geom_hline(yintercept = mean(aggregated_data$adort), color = "red", linetype = "dashed", alpha=0.5) + 
+    geom_vline(xintercept = mean(aggregated_data$num_tackles), color = "red", linetype = "dashed", alpha = 0.5)+
+    annotate("text", x = mean(aggregated_data$num_tackles), y = min(aggregated_data$adort), label = "Positional Avg", color = "red")+
+    annotate("text", y = mean(aggregated_data$adort), x = 0, label = "Positional\nAvg", color = "red") +
+    scale_color_identity(aesthetics =  c("fill", "color")) +
+    geom_text_repel(aes(label = full_name)) +
+    theme_fivethirtyeight()+
+    labs(x = "# of Tackles",
+         y = "ADORT",
+         caption = "By: Drezdan Dale | data via nflfastR",
+         title = "Number of Tackles and ADORT by Player",
+         subtitle = paste("For 2023 season: averages computed using minimum of", max_week * 2, "tackles")) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 24),
+          plot.subtitle = element_text(hjust = 0.5, size = 14),
+          axis.title = element_text(face = "bold", size = 18),
+          plot.caption = element_text(face = "bold", size = 10),
+          axis.text = element_text(size = 16)) + 
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 8), limits = c(0,max(aggregated_data$num_tackles))) +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 8), limits = c(min(aggregated_data$adort), max(aggregated_data$adort))) 
+    
   }, height = 600, width = 850)
+
+  output$rusher_table <- render_gt({ 
+    aggregated_data = 
+      complete_base_frame %>%
+      filter(position == as.character(input$position_select)) %>%
+      filter(yards_gained >= input$yard_range[1] & yards_gained <= input$yard_range[2])
+    
+    aggregated_data = 
+      aggregated_data %>%
+      group_by(tackler_id, full_name, team_color, team_color2) %>%
+      summarize(adort = mean(yards_gained),
+                num_tackles = n()) %>%
+      filter(num_tackles >= max_week*2) %>%
+      ungroup() 
+    
+    filtered_aggregated_data = 
+      aggregated_data %>%
+      filter(num_tackles >= input$min_tackles)
+    
+    
+    filtered_aggregated_data %>%
+      gt()
+    
+    
+  }, width = 850)
 }
 
+#run app
 shinyApp(ui = ui, server = server)
+
+
+
+
+#rank, player name, team, tackles, ADORT
+aggregated_data %>%
+  gt(rowname_col = "full_name") %>%
+  cols_label(adort = "ADORT",
+             num_tackles = "Number Tackles") %>%
+  cols_width(
+    adort ~ 100,
+    num_tackles ~ 100
+  ) %>% 
+  gt_theme_538(table.width = px(550))
+
+
+
+#lollipop chart for page 2
+complete_base_frame %>%
+  filter(full_name == "Aaron Donald") %>%
+  group_by(yards_gained) %>%
+  summarize(num_tackles = n()) %>%
+  ggplot(aes(x = yards_gained, y = num_tackles)) + geom_point(size = 4) +
+  geom_segment(aes(x = yards_gained, xend = yards_gained, 
+                   y = 0, yend = num_tackles), linewidth = 2) +
+  theme_fivethirtyeight() +
+  labs(x = "Yards Gained", 
+       y = "Number of Tackles") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 24),
+        plot.subtitle = element_text(hjust = 0.5, size = 14),
+        axis.title = element_text(face = "bold", size = 18),
+        plot.caption = element_text(face = "bold", size = 10),
+        axis.text = element_text(size = 16))
+
+
+## also do a table on page two
+
+#% of tackles
+#BLOS 
+## 0 - 3
+#4-6
+#>6
 
 
 
