@@ -193,6 +193,8 @@ ui <- fluidPage(
   
   mainPanel(
     navbarPage("By: Drezdan Dale",
+               
+               #page 1
                tabPanel("2023 by Position",
                  fluidRow(
                    column(4, align = "center",
@@ -209,6 +211,8 @@ ui <- fluidPage(
                  br()
                  ),
                ),
+               
+               #page 2
                tabPanel("By Player",
                         fluidRow(
                           column(4, align = "center",
@@ -216,7 +220,15 @@ ui <- fluidPage(
                                  sliderInput("yard_range_2", "Tackle Depth Range", value = c(-10, 10), min = -20, max = 75, step = 1)
                           )
                         ),
+                      mainPanel(
+                          plotOutput(outputId = "lollipop_player", width = "100%", height = "50%"),
+                          br(),
+                          tableOutput(outputId = "tackler_table_2"),
+                          br()
+                        ),
                ),
+               
+               #page 3
                tabPanel("About",
                         fluidRow(
                           column(10,align = "left",
@@ -259,6 +271,14 @@ server <- function(input, output) {
     aggregated_data %>%
     filter(num_tackles >= input$min_tackles)
   
+  most_tackles = max(aggregated_data$num_tackles)
+  
+  least_tackles = min(aggregated_data$num_tackles)
+  
+  highest_adort = max(aggregated_data$adort)
+  
+  lowest_adort = min(aggregated_data$adort)
+  
   
   filtered_aggregated_data %>%
     ggplot(aes(x = num_tackles, y = adort)) + 
@@ -267,20 +287,25 @@ server <- function(input, output) {
     geom_vline(xintercept = mean(aggregated_data$num_tackles), color = "red", linetype = "dashed", alpha = 0.5)+
     annotate("text", x = mean(aggregated_data$num_tackles), y = min(aggregated_data$adort), label = "Positional Avg", color = "red")+
     annotate("text", y = mean(aggregated_data$adort), x = 0, label = "Positional\nAvg", color = "red") +
+    annotate("label", y = lowest_adort + 1, x = least_tackles - 7, label = "Less Tackles,\n Lower ADORT", color = "red") +
+    annotate("label", y = highest_adort - 0.5, x = least_tackles - 7, label = "Less Tackles,\n Higher ADORT", color = "red") +
+    annotate("label", y = lowest_adort + 1, x = most_tackles + 3, label = "More Tackles,\n Lower ADORT", color = "red") +
+    annotate("label", y = highest_adort - 0.5, x = most_tackles + 3, label = "More Tackles,\n Higher ADORT", color = "red") +
     scale_color_identity(aesthetics =  c("fill", "color")) +
     geom_text_repel(aes(label = full_name)) +
     theme_fivethirtyeight()+
     labs(x = "# of Tackles",
          y = "ADORT",
          caption = "By: Drezdan Dale | data via nflfastR",
-         title = "Number of Tackles and ADORT by Player",
-         subtitle = paste("For 2023 season: averages computed using minimum of", max_week * 2, "tackles")) +
+         title = paste("Number of Tackles and ADORT by", input$position_select),
+         subtitle = paste("For 2023 season: averages computed using minimum of", max_week * 2, 
+         "tackles, with tackles occuring between",input$yard_range[1], "and", input$yard_range[2], "yards from LOS")) +
     theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 24),
           plot.subtitle = element_text(hjust = 0.5, size = 14),
           axis.title = element_text(face = "bold", size = 18),
           plot.caption = element_text(face = "bold", size = 10),
           axis.text = element_text(size = 16)) + 
-    scale_x_continuous(breaks = scales::pretty_breaks(n = 8), limits = c(0,max(aggregated_data$num_tackles))) +
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 8), limits = c(0,max(aggregated_data$num_tackles) + 5)) +
     scale_y_continuous(breaks = scales::pretty_breaks(n = 8), limits = c(min(aggregated_data$adort), max(aggregated_data$adort))) 
     
   }, height = 600, width = 850)
@@ -309,10 +334,52 @@ server <- function(input, output) {
     
     
   }, width = 850)
+  
+  
+  output$lollipop_player <- renderPlot({
+    
+    complete_base_frame %>%
+      filter(full_name == as.character(input$player_select) & 
+               yards_gained >= input$yard_range_2[1] & yards_gained <= input$yard_range_2[2]) %>%
+      group_by(yards_gained) %>%
+      summarize(num_tackles = n()) %>%
+      ggplot(aes(x = yards_gained, y = num_tackles)) + geom_point(size = 4) +
+      geom_segment(aes(x = yards_gained, xend = yards_gained, 
+                       y = 0, yend = num_tackles), linewidth = 2) +
+      theme_fivethirtyeight() +
+      labs(x = "Tackle Depth", 
+           y = "Number of Tackles",
+           title = paste(input$player_select, ": Number of Tackles per Tackle Depth", sep = ''),
+           subtitle = paste("For 2023 season: with tackles occuring between",input$yard_range_2[1], 
+                            "and", input$yard_range_2[2], "yards from LOS")) +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 24),
+            plot.subtitle = element_text(hjust = 0.5, size = 14),
+            axis.title = element_text(face = "bold", size = 18),
+            plot.caption = element_text(face = "bold", size = 10),
+            axis.text = element_text(size = 16)) +
+      scale_y_continuous(breaks = seq(from = 0, to = 10, by = 1))
+    
+  }, height = 600, width = 850)
+  
+  
+  
+  output$tackler_table_2 <- render_gt({ 
+  
+    complete_base_frame %>%
+      filter(full_name == as.character(input$player_select) & 
+               yards_gained >= input$yard_range_2[1] & yards_gained <= input$yard_range_2[2]) %>%
+      group_by(yards_gained) %>%
+      summarize(num_tackles = n()) %>%
+      gt()
+    
+    
+  }, width = 850)
+  
 }
 
 #run app
 shinyApp(ui = ui, server = server)
+
 
 
 
@@ -330,22 +397,6 @@ aggregated_data %>%
 
 
 
-#lollipop chart for page 2
-complete_base_frame %>%
-  filter(full_name == "Aaron Donald") %>%
-  group_by(yards_gained) %>%
-  summarize(num_tackles = n()) %>%
-  ggplot(aes(x = yards_gained, y = num_tackles)) + geom_point(size = 4) +
-  geom_segment(aes(x = yards_gained, xend = yards_gained, 
-                   y = 0, yend = num_tackles), linewidth = 2) +
-  theme_fivethirtyeight() +
-  labs(x = "Yards Gained", 
-       y = "Number of Tackles") +
-  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 24),
-        plot.subtitle = element_text(hjust = 0.5, size = 14),
-        axis.title = element_text(face = "bold", size = 18),
-        plot.caption = element_text(face = "bold", size = 10),
-        axis.text = element_text(size = 16))
 
 
 ## also do a table on page two
@@ -356,25 +407,4 @@ complete_base_frame %>%
 #4-6
 #>6
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#all that is left: table pg 1, table pg 2
