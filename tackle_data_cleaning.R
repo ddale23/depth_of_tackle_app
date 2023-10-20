@@ -8,8 +8,8 @@ library(ggrepel)
 library(ggthemes)
 library(gt)
 
-#construct a theme similat to the gt theme 538 from Thomas Mock, with slight mods
-#gt theme 528
+#construct a gt theme similar to the gt theme 538 from Thomas Mock, with slight mods
+#source: https://themockup.blog/posts/2020-09-26-functions-and-themes-for-gt-tables/
 gt_theme_538 <- function(data,...) {
   data %>%
     opt_all_caps()  %>%
@@ -30,8 +30,8 @@ gt_theme_538 <- function(data,...) {
       )
     )  %>% 
     tab_options(
-      column_labels.background.color = "white",
-      table.border.top.width = px(3),
+      column_labels.background.color = "transparent",
+      table.border.top.width = px(12),
       table.border.top.color = "transparent",
       table.border.bottom.color = "transparent",
       table.border.bottom.width = px(3),
@@ -39,15 +39,17 @@ gt_theme_538 <- function(data,...) {
       column_labels.border.top.color = "transparent",
       column_labels.border.bottom.width = px(3),
       column_labels.border.bottom.color = "black",
+      heading.subtitle.font.size = 15,
       data_row.padding = px(3),
       source_notes.font.size = 12,
-      table.font.size = 16,
+      table.font.size = 24,
       #center align
       heading.align = "center",
       ...
     ) 
 }
 
+##data preparation##
 #load in data
 seasons = 2023
 pbp_data = load_pbp(seasons)
@@ -167,7 +169,7 @@ player_info =
 
 #get team colors
 player_info = left_join(player_info, teams_colors_logos, by = c("team" = "team_abbr")) %>% 
-  select(season, team, position, full_name, first_name, last_name, gsis_id, team_color, team_color2)
+  select(season, team, position, full_name, first_name, last_name, gsis_id, team_color, team_color2, team_wordmark)
 
 
 #join binded_tackle_frame with player_info 
@@ -198,14 +200,14 @@ ui <- fluidPage(
                tabPanel("2023 by Position",
                  fluidRow(
                    column(4, align = "center",
-                     selectInput("position_select", "Select Position", choices = c("EDGE", "IDL", "ILB", "S", "CB"), selected = "EDGE")),
+                     selectInput("position_select", "Select Position", choices = c("EDGE", "IDL", "ILB", "S", "CB"), selected = "ILB")),
                    column(7, align = "left",
-                     sliderInput("min_tackles", "Minimum Tackles", value = 18, min = max_week*2 , max = 40, step = 1)),
+                     sliderInput("min_tackles", "Minimum Tackles", value = max_week*3, min = max_week*2 , max = max_week*7, step = 1)),
                    column(4, align = "center",
                      sliderInput("yard_range", "Tackle Depth Range", value = c(-10, 10), min = -20, max = 75, step = 1))
                ),
                mainPanel(
-                 plotOutput(outputId = "tackler_graph"),
+                 plotOutput(outputId = "tackler_graph", width = "100%", height = "50%"),
                  br(),
                  tableOutput(outputId = "tackler_table"),
                  br()
@@ -232,17 +234,23 @@ ui <- fluidPage(
                tabPanel("About",
                         fluidRow(
                           column(10,align = "left",
-                                 tags$h4("I built this app using free resources from the nflfastr package and several resources on Twitter.
-                                        This is my first shiny app and was a great learning resource for me. I learned how to construct a shiny app
-                                        from reading through O'Reilly's Mastering Shiny free e-book and by referencing Tej Seth's Shiny Code on his GitHub
-                                        as it is extremely easy to follow."),
+                                 tags$h4("Average Depth of Run Tackle (ADORT) is meant to provide context to a counting statistic. By 
+                                         measuring how far down the field a run tackle occured, we can better understand how much impact
+                                         a defender's tackles truly had. This app will hopefully help people understand those tackles more easily."),
                                  br(),
-                                 tags$h4("As for the nflfastr data side, a lot of the learning here has been done over the past 3 years from much 
-                                 of Ben Baldwin's work on the nflfastR website. Average Depth of Run Tackle has always been an interesting statistic for me as 
-                                         I feel it adds much needed context to the tackle box-score statistic."),
+                                 tags$h4("To note, all of the tackles and statistics within this app are for designed rushing plays only, meaning that
+                                         all QB Scrambles are filtered out. Also, please use the sliders to filter out outlier tackles - if 
+                                         a player has 10 tackles 75 yards down the field, that will skew his average tackle depth, but should not
+                                         necessarily be used to judge that player."),
+                                 br(),
+                            
+                                 tags$h4("As for actually building this Shiny App, I used free publicly available data via nflfastR. While I have used
+                                         nflfastR over the past 2 years, this was the first Shiny App I have ever designed; I used several online
+                                         resources to learn Shiny, including Tej Seth's RYOE Shiny App, the Data Professor's YouTube videos, and 
+                                         O'Reilly's Shiny online book."),
                                  br(),
                                  tags$h4("Feel free to connect with me on LinkedIn (search Drezdan Dale), Twitter (@drezdan_dale), or email (drez.data@gmail.com).
-                                        I am always open to feedback or questions!")
+                                        I am always open to feedback or questions! And I will be iterating on this app more in the future (EPA will be getting added).")
                           )
                         )
                )
@@ -297,9 +305,9 @@ server <- function(input, output) {
     labs(x = "# of Tackles",
          y = "ADORT",
          caption = "By: Drezdan Dale | data via nflfastR",
-         title = paste("Number of Tackles and ADORT by", input$position_select),
+         title = paste("Number of Rushing Tackles and ADORT by", input$position_select),
          subtitle = paste("For 2023 season: averages computed using minimum of", max_week * 2, 
-         "tackles, with tackles occuring between",input$yard_range[1], "and", input$yard_range[2], "yards from LOS")) +
+         "tackles, with tackles occuring between",input$yard_range[1], "and", input$yard_range[2], "yards from LOS. \n Designed rushing plays only.")) +
     theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 24),
           plot.subtitle = element_text(hjust = 0.5, size = 14),
           axis.title = element_text(face = "bold", size = 18),
@@ -310,7 +318,7 @@ server <- function(input, output) {
     
   }, height = 600, width = 850)
 
-  output$rusher_table <- render_gt({ 
+  output$tackler_table <- render_gt({ 
     aggregated_data = 
       complete_base_frame %>%
       filter(position == as.character(input$position_select)) %>%
@@ -318,7 +326,7 @@ server <- function(input, output) {
     
     aggregated_data = 
       aggregated_data %>%
-      group_by(tackler_id, full_name, team_color, team_color2) %>%
+      group_by(tackler_id, full_name, team_color, team_color2, team_wordmark) %>%
       summarize(adort = mean(yards_gained),
                 num_tackles = n()) %>%
       filter(num_tackles >= max_week*2) %>%
@@ -330,7 +338,39 @@ server <- function(input, output) {
     
     
     filtered_aggregated_data %>%
-      gt()
+      arrange(adort) %>%
+      mutate(adort = round(adort, digits = 2),
+             rank = row_number()) %>%
+      select(rank, full_name, team_wordmark, num_tackles, adort) %>%
+      gt() %>%
+      text_transform(
+        locations = cells_body(c(team_wordmark)),
+        fn = function(x){
+          web_image(url = x, height = px(25))}) %>% 
+      tab_header(
+        paste("Number of Tackles and ADORT by", input$position_select),
+        subtitle = paste("For 2023 season: averages computed using minimum of", max_week * 2, 
+                         "tackles, with tackles occuring between",input$yard_range[1], "and", input$yard_range[2], "yards from LOS")
+      ) %>%
+      cols_label(rank = "Rank",
+                full_name = "Player",
+                num_tackles = "Number of Tackles",
+                 adort = "ADORT",
+                 team_wordmark = "Team") %>%
+      cols_width(rank ~ 50,
+                num_tackles ~ 200,
+                 full_name ~ 200,
+                 adort ~ 200,
+                 team_wordmark ~ 100) %>%
+      data_color(
+        columns = c(adort),
+        colors = scales::col_numeric(
+          palette = "PRGn",
+          domain = NULL,
+          reverse = TRUE)) %>%
+      tab_source_note(source_note = md("By Drezdan Dale | data via nflfastR")) %>%
+      gt_theme_538(table.width = px(550))
+    
     
     
   }, width = 850)
@@ -351,7 +391,8 @@ server <- function(input, output) {
            y = "Number of Tackles",
            title = paste(input$player_select, ": Number of Tackles per Tackle Depth", sep = ''),
            subtitle = paste("For 2023 season: with tackles occuring between",input$yard_range_2[1], 
-                            "and", input$yard_range_2[2], "yards from LOS")) +
+                            "and", input$yard_range_2[2], "yards from LOS. \n Designed rushing plays only."),
+           caption = "By: Drezdan Dale | data via nflfastR") +
       theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 24),
             plot.subtitle = element_text(hjust = 0.5, size = 14),
             axis.title = element_text(face = "bold", size = 18),
@@ -365,12 +406,48 @@ server <- function(input, output) {
   
   output$tackler_table_2 <- render_gt({ 
   
-    complete_base_frame %>%
+    tackle_depth_gt_prep = 
+      complete_base_frame %>%
       filter(full_name == as.character(input$player_select) & 
-               yards_gained >= input$yard_range_2[1] & yards_gained <= input$yard_range_2[2]) %>%
-      group_by(yards_gained) %>%
+               input$yard_range_2[1] & yards_gained <= input$yard_range_2[2]) %>%
+      mutate(yard_grouping = case_when(yards_gained < 0 ~ 'TFL',
+                                       yards_gained >= 0 & yards_gained < 3 ~ '0-2',
+                                       yards_gained >= 3 & yards_gained < 6 ~ '3-5',
+                                       yards_gained >= 6 ~ '6+'
+      )) %>%
+      group_by(yard_grouping) %>%
       summarize(num_tackles = n()) %>%
-      gt()
+      mutate(yard_grouping_order = case_when(yard_grouping == 'TFL' ~ 1,
+                                             yard_grouping == '0-2' ~ 2,
+                                             yard_grouping == '3-5' ~ 3,
+                                             yard_grouping == '6+' ~ 4)) %>%
+      arrange(yard_grouping_order) %>%
+      select(yard_grouping, num_tackles) %>%
+      ungroup()
+    
+    tackle_depth_gt_prep %>%
+      gt(rowname_col  = "yard_grouping") %>%
+      tab_header(
+        title = paste(input$player_select,": Depth of Run Tackle Distribution", sep = ''),
+        subtitle =  paste("By Area for 2023 Season; yard range:",input$yard_range_2[1], 
+                            "to", input$yard_range_2[2], "yards from LOS")
+                          ) %>%
+      cols_label(num_tackles = "Number of Tackles") %>%
+      grand_summary_rows(
+        fns = Total ~ sum( na.rm = TRUE, columns = num_tackles)
+      ) %>%
+      cols_width(num_tackles ~ 200,
+                 yard_grouping ~ 100) %>%
+      data_color(
+        columns = c(num_tackles),
+        colors = scales::col_numeric(
+          palette = "PRGn",
+          domain = c(0, max(tackle_depth_gt_prep$num_tackles)))) %>%
+      cols_align(
+        align = "center",
+        columns = num_tackles)%>%
+      tab_source_note(source_note = md("By Drezdan Dale | data via nflfastR | designed rushing plays only")) %>%
+      gt_theme_538(table.width = px(550))
     
     
   }, width = 850)
@@ -381,30 +458,3 @@ server <- function(input, output) {
 shinyApp(ui = ui, server = server)
 
 
-
-
-
-#rank, player name, team, tackles, ADORT
-aggregated_data %>%
-  gt(rowname_col = "full_name") %>%
-  cols_label(adort = "ADORT",
-             num_tackles = "Number Tackles") %>%
-  cols_width(
-    adort ~ 100,
-    num_tackles ~ 100
-  ) %>% 
-  gt_theme_538(table.width = px(550))
-
-
-
-
-
-## also do a table on page two
-
-#% of tackles
-#BLOS 
-## 0 - 3
-#4-6
-#>6
-
-#all that is left: table pg 1, table pg 2
